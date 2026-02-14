@@ -287,6 +287,55 @@ async def visual_mapper(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al mapear el PDF: {type(e).__name__} - {e}")
 
+# ----------------- Stamp Header -----------------
+def _create_header_overlay(width_pt: float, height_pt: float, text: str) -> bytes:
+    """Crea un PDF de 1 página con solo el texto gris centrado arriba."""
+    w_mm = width_pt * 25.4 / 72
+    h_mm = height_pt * 25.4 / 72
+    overlay = FPDF(orientation="P", unit="mm", format=(w_mm, h_mm))
+    overlay.set_margin(0)
+    overlay.add_page()
+    overlay.set_font("Helvetica", "", 8)
+    overlay.set_text_color(160, 160, 160)
+    overlay.set_y(3)
+    overlay.cell(w_mm, 5, text, align="C")
+    return overlay.output()
+
+@app.post("/stamp-header")
+async def stamp_header(
+    file: UploadFile = File(...),
+    text: str = "Foreign-Owned U.S. DE",
+):
+    """
+    Recibe un PDF y estampa un texto gris centrado en la parte superior
+    de cada página. Devuelve el PDF modificado.
+    """
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="El archivo debe ser un PDF.")
+    try:
+        reader = PdfReader(io.BytesIO(await file.read()))
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            box = page.mediabox
+            w = float(box.width)
+            h = float(box.height)
+            overlay_bytes = _create_header_overlay(w, h, text)
+            overlay_reader = PdfReader(io.BytesIO(overlay_bytes))
+            page.merge_page(overlay_reader.pages[0])
+            writer.add_page(page)
+
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+        return StreamingResponse(
+            out,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=stamped_{getattr(file, 'filename', 'doc.pdf')}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al estampar header: {type(e).__name__} - {e}")
+
 # ----------------- Supporting Statement -----------------
 class StatementRequest(BaseModel):
     business_name: str
