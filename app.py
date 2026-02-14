@@ -4,6 +4,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import NameObject
+from fpdf import FPDF
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(
     title="PDF Filler API con pypdf",
@@ -283,6 +286,86 @@ async def visual_mapper(file: UploadFile = File(...)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al mapear el PDF: {type(e).__name__} - {e}")
+
+# ----------------- Supporting Statement -----------------
+class StatementRequest(BaseModel):
+    business_name: str
+    ein: str
+    tax_year: str = "2024"
+    capital_contributions_usd: float = 0
+    capital_distributions_usd: float = 0
+    llc_cost_creation_usd: float = 0
+    owner_name: str = ""
+
+@app.post("/generate-statement")
+async def generate_statement(req: StatementRequest):
+    """
+    Genera el PDF 'Federal Supporting Statements' para LLC Single Member (DE).
+    Incluye Part V (Statement 5) y Part VI del Form 5472.
+    """
+    try:
+        pdf = FPDF(orientation="P", unit="mm", format="Letter")
+        pdf.set_auto_page_break(auto=True, margin=25)
+        pdf.add_page()
+
+        # --- Header ---
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, "Foreign-Owned U.S. DE", ln=True, align="C")
+        pdf.ln(6)
+
+        # --- Title ---
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 8, "Federal Supporting Statements", ln=True, align="C")
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 8, req.tax_year, ln=True, align="C")
+        pdf.ln(10)
+
+        # --- Name & EIN ---
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"Name(s) as shown on return:  {req.business_name}", ln=True)
+        pdf.ln(2)
+
+        ein_formatted = req.ein
+        if len(req.ein) == 9 and "-" not in req.ein:
+            ein_formatted = f"{req.ein[:2]}-{req.ein[2:]}"
+        pdf.cell(0, 7, f"Tax ID Number:  {ein_formatted}", ln=True)
+        pdf.ln(10)
+
+        # --- PART V - Statement 5 ---
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "FORM 5472 - PAGE 2 - PART V - Statement 5", ln=True)
+        pdf.ln(15)
+
+        pdf.set_font("Helvetica", "", 11)
+
+        contrib = f"{req.capital_contributions_usd:,.2f}$"
+        distrib = f"{req.capital_distributions_usd:,.2f}$"
+        llc_cost = f"{req.llc_cost_creation_usd:,.2f}$"
+
+        pdf.cell(0, 7, f"CAPITAL CONTRIBUTIONS: {contrib}", ln=True)
+        pdf.cell(0, 7, f"CAPITAL DISTRIBUTIONS: {distrib}", ln=True)
+        pdf.cell(0, 7, f"LLC COST CREATION: {llc_cost}", ln=True)
+        pdf.ln(10)
+
+        # --- PART VI ---
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "FORM 5472 - PAGE 2 - PART VI", ln=True)
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 7, "THE FOREIGN RELATED PARTY IS THE MEMBER OF THE REPORTING CORPORATION")
+
+        # --- Output ---
+        out = io.BytesIO(pdf.output())
+        out.seek(0)
+
+        filename = f"Supporting_Statement_{req.tax_year}_{req.ein}.pdf"
+        return StreamingResponse(
+            out,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar statement: {type(e).__name__} - {e}")
 
 @app.get("/")
 def read_root():
