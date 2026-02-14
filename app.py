@@ -308,9 +308,11 @@ async def generate_statement(req: StatementRequest):
         pdf.set_auto_page_break(auto=True, margin=25)
         pdf.add_page()
 
-        # --- Header ---
-        pdf.set_font("Helvetica", "B", 10)
+        # --- Header (gray text) ---
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(160, 160, 160)
         pdf.cell(0, 6, "Foreign-Owned U.S. DE", ln=True, align="C")
+        pdf.set_text_color(0, 0, 0)
         pdf.ln(6)
 
         # --- Title ---
