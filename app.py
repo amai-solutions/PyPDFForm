@@ -96,22 +96,39 @@ def _apply_checkbox_appearances(writer, btn_values_by_name):
     """
     Fija /V en el campo y /AS en cada widget para que la marca sea visible.
     btn_values_by_name: {'FieldName': '/1', ...}
+    Recorre TODO el árbol de campos (no solo primer nivel) para alcanzar
+    campos anidados en subforms XFA como topmostSubform[0].Page1[0].c1_12[0].
     """
     acro = _resolve_acroform(writer)
     if not acro:
         return
-    for ref in acro.get("/Fields", []):
-        fld = ref.get_object()
-        if fld.get("/FT") == "/Btn":
-            fname = fld.get("/T")
-            sval = btn_values_by_name.get(fname)
-            if not sval:
-                continue
-            val = NameObject(sval)
-            fld.update({NameObject("/V"): val})
-            widgets = fld.get("/Kids", []) or [fld]
-            for w in widgets:
-                w.update({NameObject("/AS"): val})
+
+    def _walk_fields(fields, prefix=""):
+        for ref in fields:
+            try:
+                fld = ref.get_object()
+            except Exception:
+                fld = ref
+            partial = fld.get("/T", "")
+            full_name = f"{prefix}.{partial}" if prefix else str(partial)
+            ft = fld.get("/FT")
+            if ft == "/Btn":
+                sval = btn_values_by_name.get(full_name) or btn_values_by_name.get(str(partial))
+                if sval:
+                    val = NameObject(sval)
+                    fld.update({NameObject("/V"): val})
+                    widgets = fld.get("/Kids", []) or [fld]
+                    for w in widgets:
+                        try:
+                            w = w.get_object()
+                        except Exception:
+                            pass
+                        w.update({NameObject("/AS"): val})
+            kids = fld.get("/Kids", [])
+            if kids:
+                _walk_fields(kids, full_name)
+
+    _walk_fields(acro.get("/Fields", []))
 
 def _pages_of_field(reader: PdfReader, field_dict) -> list[int]:
     """
