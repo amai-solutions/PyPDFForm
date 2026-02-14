@@ -92,43 +92,54 @@ def _normalize_checkbox_value(v, field_dict):
         sval = "/" + sval
     return sval
 
+def _build_full_name(annot):
+    """Construye el nombre completo del campo recorriendo la cadena /Parent."""
+    parts = []
+    obj = annot
+    while obj:
+        t = obj.get("/T")
+        if t:
+            parts.append(str(t))
+        parent = obj.get("/Parent")
+        if parent:
+            try:
+                obj = parent.get_object()
+            except Exception:
+                obj = parent
+        else:
+            obj = None
+    parts.reverse()
+    return ".".join(parts)
+
 def _apply_checkbox_appearances(writer, btn_values_by_name):
     """
-    Fija /V en el campo y /AS en cada widget para que la marca sea visible.
-    btn_values_by_name: {'FieldName': '/1', ...}
-    Recorre TODO el árbol de campos (no solo primer nivel) para alcanzar
-    campos anidados en subforms XFA como topmostSubform[0].Page1[0].c1_12[0].
+    Fija /AS en cada widget de checkbox para que la marca sea visible.
+    Recorre las anotaciones de cada página del writer y busca por nombre completo.
     """
-    acro = _resolve_acroform(writer)
-    if not acro:
-        return
-
-    def _walk_fields(fields, prefix=""):
-        for ref in fields:
+    for page in writer.pages:
+        annots = page.get("/Annots", [])
+        for annot_ref in annots:
             try:
-                fld = ref.get_object()
+                annot = annot_ref.get_object()
             except Exception:
-                fld = ref
-            partial = fld.get("/T", "")
-            full_name = f"{prefix}.{partial}" if prefix else str(partial)
-            ft = fld.get("/FT")
-            if ft == "/Btn":
-                sval = btn_values_by_name.get(full_name) or btn_values_by_name.get(str(partial))
-                if sval:
-                    val = NameObject(sval)
-                    fld.update({NameObject("/V"): val})
-                    widgets = fld.get("/Kids", []) or [fld]
-                    for w in widgets:
-                        try:
-                            w = w.get_object()
-                        except Exception:
-                            pass
-                        w.update({NameObject("/AS"): val})
-            kids = fld.get("/Kids", [])
-            if kids:
-                _walk_fields(kids, full_name)
-
-    _walk_fields(acro.get("/Fields", []))
+                annot = annot_ref
+            ft = annot.get("/FT")
+            if not ft:
+                parent = annot.get("/Parent")
+                if parent:
+                    try:
+                        parent_obj = parent.get_object()
+                    except Exception:
+                        parent_obj = parent
+                    ft = parent_obj.get("/FT")
+            if ft != "/Btn":
+                continue
+            full_name = _build_full_name(annot)
+            sval = btn_values_by_name.get(full_name)
+            if not sval:
+                continue
+            val = NameObject(sval)
+            annot.update({NameObject("/AS"): val, NameObject("/V"): val})
 
 def _pages_of_field(reader: PdfReader, field_dict) -> list[int]:
     """
