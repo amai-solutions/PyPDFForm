@@ -11,7 +11,7 @@ from typing import Optional
 app = FastAPI(
     title="PDF Filler API con pypdf",
     description="Una API de código abierto construida exclusivamente con pypdf para inspeccionar y rellenar formularios PDF.",
-    version="11.1.0",
+    version="11.2.0",
 )
 
 # ----------------- Helpers -----------------
@@ -113,10 +113,13 @@ def _build_full_name(annot):
 
 def _apply_checkbox_appearances(writer, btn_values_by_name):
     """
-    Fija /AS en cada widget de checkbox para que la marca sea visible.
-    Recorre las anotaciones de cada página del writer y busca por nombre completo.
+    Fija /AS y /V en cada widget de checkbox Y estampa un overlay visual
+    con checkmarks, porque pdf.js no renderiza correctamente los cambios de /AS.
     """
-    for page in writer.pages:
+    # Paso 1: Setear /AS y /V en las anotaciones + recopilar posiciones
+    checked_by_page = {}  # page_idx -> list of (x1, y1, x2, y2)
+
+    for page_idx, page in enumerate(writer.pages):
         annots = page.get("/Annots", [])
         for annot_ref in annots:
             try:
@@ -140,6 +143,36 @@ def _apply_checkbox_appearances(writer, btn_values_by_name):
                 continue
             val = NameObject(sval)
             annot.update({NameObject("/AS"): val, NameObject("/V"): val})
+
+            # Si está marcado (no /Off), guardar posición para overlay
+            if sval.lower() != "/off":
+                rect = annot.get("/Rect")
+                if rect:
+                    coords = [float(v) for v in rect]
+                    checked_by_page.setdefault(page_idx, []).append(coords)
+
+    # Paso 2: Crear overlay con checkmarks para cada página que tenga checks
+    for page_idx, rects in checked_by_page.items():
+        page = writer.pages[page_idx]
+        box = page.mediabox
+        w_pt = float(box.width)
+        h_pt = float(box.height)
+
+        overlay = FPDF(orientation="P", unit="pt", format=(w_pt, h_pt))
+        overlay.set_margin(0)
+        overlay.add_page()
+
+        for x1, y1, x2, y2 in rects:
+            cx = (x1 + x2) / 2
+            cy_fpdf = h_pt - (y1 + y2) / 2
+            size = min(x2 - x1, y2 - y1) * 0.7
+            overlay.set_font("ZapfDingbats", "", size)
+            overlay.set_text_color(0, 0, 0)
+            overlay.set_xy(cx - size / 2, cy_fpdf - size / 2)
+            overlay.cell(size, size, chr(0x34), align="C")
+
+        overlay_reader = PdfReader(io.BytesIO(overlay.output()))
+        page.merge_page(overlay_reader.pages[0])
 
 def _pages_of_field(reader: PdfReader, field_dict) -> list[int]:
     """
