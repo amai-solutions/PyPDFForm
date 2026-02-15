@@ -456,9 +456,9 @@ class StatementRequest(BaseModel):
     business_name: str
     ein: str
     tax_year: str = "2024"
-    capital_contributions_usd: float = 0
-    capital_distributions_usd: float = 0
-    llc_cost_creation_usd: float = 0
+    capital_contributions_usd: Optional[float] = None
+    capital_distributions_usd: Optional[float] = None
+    llc_cost_creation_usd: Optional[float] = None
     owner_name: str = ""
 
 @app.post("/generate-statement")
@@ -504,13 +504,12 @@ async def generate_statement(req: StatementRequest):
 
         pdf.set_font("Helvetica", "", 11)
 
-        contrib = f"{req.capital_contributions_usd:,.2f}$"
-        distrib = f"{req.capital_distributions_usd:,.2f}$"
-        llc_cost = f"{req.llc_cost_creation_usd:,.2f}$"
-
-        pdf.cell(0, 7, f"CAPITAL CONTRIBUTIONS: {contrib}", ln=True)
-        pdf.cell(0, 7, f"CAPITAL DISTRIBUTIONS: {distrib}", ln=True)
-        pdf.cell(0, 7, f"LLC COST CREATION: {llc_cost}", ln=True)
+        if req.capital_contributions_usd is not None:
+            pdf.cell(0, 7, f"CAPITAL CONTRIBUTIONS: {req.capital_contributions_usd:,.2f}$", ln=True)
+        if req.capital_distributions_usd is not None:
+            pdf.cell(0, 7, f"CAPITAL DISTRIBUTIONS: {req.capital_distributions_usd:,.2f}$", ln=True)
+        if req.llc_cost_creation_usd is not None:
+            pdf.cell(0, 7, f"LLC COST CREATION: {req.llc_cost_creation_usd:,.2f}$", ln=True)
         pdf.ln(10)
 
         # --- PART VI ---
