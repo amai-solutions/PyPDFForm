@@ -200,6 +200,53 @@ def _pages_of_field(reader: PdfReader, field_dict) -> list[int]:
                 break
     return pages
 
+def _apply_text_overlays(writer, overlays):
+    """
+    Aplica textos libres sobre páginas del PDF.
+    Cada overlay: { "page": 2, "x": 400, "y": 150, "text": "Statement 5", "fontSize": 8, "bold": false }
+    - page: número de página (1-based)
+    - x, y: coordenadas en puntos PDF (origen abajo-izquierda)
+    - text: texto a dibujar
+    - fontSize: tamaño de fuente (default 8)
+    - bold: si usar negrita (default false)
+    """
+    # Agrupar overlays por página
+    by_page = {}
+    for ov in overlays:
+        pg = ov.get("page", 1) - 1  # convertir a 0-based
+        by_page.setdefault(pg, []).append(ov)
+
+    for page_idx, items in by_page.items():
+        if page_idx < 0 or page_idx >= len(writer.pages):
+            continue
+        page = writer.pages[page_idx]
+        box = page.mediabox
+        w_pt = float(box.width)
+        h_pt = float(box.height)
+
+        overlay = FPDF(orientation="P", unit="pt", format=(w_pt, h_pt))
+        overlay.set_margin(0)
+        overlay.add_page()
+
+        for item in items:
+            x = float(item.get("x", 0))
+            y_pdf = float(item.get("y", 0))
+            text = str(item.get("text", ""))
+            font_size = float(item.get("fontSize", 8))
+            bold = item.get("bold", False)
+
+            # Convertir coordenadas PDF (origen abajo-izq) a FPDF (origen arriba-izq)
+            y_fpdf = h_pt - y_pdf
+
+            style = "B" if bold else ""
+            overlay.set_font("Helvetica", style, font_size)
+            overlay.set_text_color(0, 0, 0)
+            overlay.set_xy(x, y_fpdf - font_size * 0.4)
+            overlay.cell(0, font_size, text)
+
+        overlay_reader = PdfReader(io.BytesIO(overlay.output()))
+        page.merge_page(overlay_reader.pages[0])
+
 # ----------------- Endpoints -----------------
 @app.post("/dump-fields")
 async def dump_fields(file: UploadFile = File(...)):
@@ -267,6 +314,9 @@ async def fill_form(file: UploadFile = File(...), data: UploadFile = File(...)):
         if not isinstance(form_data, dict):
             raise HTTPException(status_code=400, detail="El JSON debe ser un objeto.")
 
+        # Extraer overlays si existen (texto libre en posiciones arbitrarias)
+        overlays = form_data.pop("__overlays", None)
+
         fields = reader.get_fields() or {}
         mapping = {}
         btn_map = {}
@@ -287,6 +337,10 @@ async def fill_form(file: UploadFile = File(...), data: UploadFile = File(...)):
             writer.update_page_form_field_values(p, mapping, auto_regenerate=False)
 
         _apply_checkbox_appearances(writer, btn_map)
+
+        # Aplicar overlays de texto libre si se proporcionaron
+        if overlays and isinstance(overlays, list):
+            _apply_text_overlays(writer, overlays)
 
         out = io.BytesIO()
         writer.write(out)
