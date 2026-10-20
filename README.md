@@ -1,4 +1,22 @@
-# PDF Filler API (pypdf)
+<div align="center">
+  <img src="docs/assets/AMAI_LOGO-RECUADRO_2026-10-11.svg" alt="AMAI Solutions" width="120" height="120">
+
+  <h1>AMAI PDF Filler API</h1>
+
+  <p><strong>Microservicio FastAPI para inspección y rellenado de formularios PDF AcroForm.</strong></p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Python-Backend-3776AB?style=for-the-badge" alt="Python: Backend">
+    <img src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge" alt="FastAPI: API">
+    <img src="https://img.shields.io/badge/PDF-pypdf-0f9d6a?style=for-the-badge" alt="PDF: pypdf">
+  </p>
+</div>
+
+| Campo | Valor |
+|---|---|
+| **Repositorio** | [`amai-solutions/PyPDFForm`](https://github.com/amai-solutions/PyPDFForm) |
+| **Identidad** | AMAI Solutions |
+| **Estado documentado** | Documentación de uso e instalación disponible; no se ha certificado despliegue activo ni se ha cotejado el número de versión anunciado. |
 
 API minimalista en **FastAPI** para **inspeccionar y rellenar formularios PDF** usando solo **pypdf**.
 
